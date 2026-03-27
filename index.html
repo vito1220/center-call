@@ -3,121 +3,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>실적 공유 시스템</title>
+    <title>실시간 마감 실적 현황판</title>
     <style>
-        body { font-family: 'Malgun Gothic', sans-serif; background-color: #f4f7f6; padding: 20px; }
-        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        .admin-section { background: #fff3cd; padding: 20px; border-radius: 8px; margin-bottom: 30px; border: 1px solid #ffeeba; }
-        textarea { width: 100%; height: 100px; margin-bottom: 10px; border-radius: 5px; border: 1px solid #ccc; padding: 10px; }
-        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; }
-        .btn-blue { background: #007bff; }
-        .btn-green { background: #28a745; }
-        .view-section { border-top: 2px solid #dee2e6; padding-top: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
-        th { background: #e9ecef; }
-        .update-time { font-size: 0.9em; color: #666; text-align: right; }
+        body { font-family: 'Malgun Gothic', sans-serif; background-color: #f4f7f9; padding: 20px; color: #333; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        h2 { color: #0056b3; text-align: center; margin-bottom: 5px; }
+        .status-bar { text-align: right; font-size: 0.85em; color: #666; margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        
+        .grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 25px; }
+        .box { background: #fff; border: 1px solid #e1e4e8; padding: 20px; border-radius: 10px; }
+        h3 { font-size: 1.1em; margin-top: 0; color: #444; border-left: 5px solid #0056b3; padding-left: 10px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #f0f0f0; padding: 12px; text-align: center; font-size: 14px; }
+        th { background-color: #f8f9fa; color: #555; font-weight: bold; }
+        tr:nth-child(even) { background-color: #fafafa; }
+        .highlight { font-weight: bold; color: #d9534f; }
+        .center-name { font-weight: bold; color: #0056b3; }
+
+        /* 로딩 애니메이션 */
+        #loading { text-align: center; padding: 50px; font-weight: bold; color: #0056b3; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>📈 센터별 마감 실적 현황판</h2>
-    <div id="lastUpdate" class="update-time">데이터 로딩 중...</div>
+    <h2>📊 마감 실적 실시간 현황판</h2>
+    <div id="updateTime" class="status-bar">데이터를 불러오는 중...</div>
 
-    <details class="admin-section">
-        <summary style="cursor:pointer; font-weight:bold;">⚙️ 관리자 데이터 업데이트 (나만 사용)</summary>
-        <div style="margin-top:10px;">
-            <textarea id="rawInput" placeholder="엑셀 데이터를 붙여넣으세요..."></textarea>
-            <button class="btn btn-blue" onclick="processAndDownload()">1. 분석 및 데이터 파일 다운로드</button>
-            <p style="font-size:0.85em; color:#856404;">* 다운로드된 'data.json' 파일을 깃허브에 올리면 전체 공지됩니다.</p>
+    <div id="loading">데이터를 읽어오고 있습니다. 잠시만 기다려주세요...</div>
+
+    <div id="content" class="grid" style="display:none;">
+        <div class="box">
+            <h3>🏢 센터별 합계</h3>
+            <table id="centerTable">
+                <thead><tr><th>센터명</th><th>총 콜건수</th></tr></thead>
+                <tbody></tbody>
+            </table>
         </div>
-    </details>
 
-    <div class="view-section">
-        <h3>🏢 센터별 합계</h3>
-        <table id="centerTable"><thead><tr><th>센터</th><th>콜건수</th></tr></thead><tbody></tbody></table>
-        
-        <h3>👥 담당자별 합계</h3>
-        <table id="managerTable"><thead><tr><th>담당자</th><th>센터</th><th>콜건수</th></tr></thead><tbody></tbody></table>
+        <div class="box">
+            <h3>👥 담당자별 실적</h3>
+            <table id="managerTable">
+                <thead><tr><th>담당자</th><th>센터</th><th>콜건수</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
 </div>
 
 <script>
-    const centers = ["고양", "의정부", "구리", "노원", "광진", "서대문", "춘천", "강릉", "원주"];
+    // 제공해주신 구글 시트 CSV 주소
+    const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTooibgxnEq0T2BWeFQYDWmOUT7WEluZ08-OVVMxPvQ3lrbNnmI8URkXGmQSKC7ckOUbeBhEvjpa7Ld/pub?output=csv';
 
-    // 1. 페이지 접속 시 깃허브에 있는 data.json을 자동으로 가져옴
     window.onload = function() {
-        fetch('data.json')
-            .then(response => response.json())
-            .then(data => {
-                document.getElementById('lastUpdate').innerText = "최종 업데이트: " + data.updatedAt;
-                renderTables(data.centerStats, data.managerStats);
+        fetch(SHEET_URL)
+            .then(response => response.text())
+            .then(csvText => {
+                processData(csvText);
             })
-            .catch(err => {
-                document.getElementById('lastUpdate').innerText = "업데이트된 데이터 파일이 없습니다.";
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('loading').innerText = "데이터를 불러오는 데 실패했습니다. 시트 설정을 확인해주세요.";
             });
     };
 
-    // 2. 관리자가 데이터를 분석하고 파일로 만드는 함수
-    function processAndDownload() {
-        const text = document.getElementById('rawInput').value.trim();
-        if(!text) return;
-
+    function processData(csvText) {
+        // CSV 줄 단위로 분리 (쉼표로 구분)
+        const rows = csvText.split('\n');
         let centerStats = {};
         let managerStats = {};
-        const lines = text.split('\n');
 
-        lines.forEach(line => {
-            const parts = line.trim().split(/\s+/);
-            if (parts.length < 2) return;
-            const count = parseInt(parts[parts.length - 1]) || 0;
-            const infoParts = parts.slice(0, parts.length - 1).join(" ").split('_');
-            if (infoParts.length < 3) return;
+        // 첫 번째 줄(헤더)을 제외하고 분석
+        for (let i = 1; i < rows.length; i++) {
+            if (!rows[i].trim()) continue;
+            
+            // CSV 파싱 (쉼표 기준 분리)
+            const cols = rows[i].split(',');
+            if (cols.length < 4) continue;
 
-            const center = infoParts[0].trim();
-            const manager = infoParts[2].trim();
-            const matchedCenter = centers.find(c => center.includes(c));
+            const center = cols[0].trim();   // A열: 센터명
+            const manager = cols[2].trim();  // C열: 담당자
+            const count = parseInt(cols[3].trim()) || 0; // D열: 건수
 
-            if (matchedCenter) {
-                centerStats[matchedCenter] = (centerStats[matchedCenter] || 0) + count;
-                if (!managerStats[manager]) managerStats[manager] = { center: matchedCenter, count: 0 };
+            if (center && manager) {
+                // 센터별 합산
+                centerStats[center] = (centerStats[center] || 0) + count;
+                
+                // 담당자별 합산
+                if (!managerStats[manager]) {
+                    managerStats[manager] = { center: center, count: 0 };
+                }
                 managerStats[manager].count += count;
             }
-        });
+        }
 
-        // 파일로 저장할 객체 생성
-        const finalData = {
-            updatedAt: new Date().toLocaleString(),
-            centerStats: centerStats,
-            managerStats: managerStats
-        };
-
-        // JSON 파일 다운로드 실행
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(finalData));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", "data.json");
-        document.body.appendChild(downloadAnchorNode);
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
-        
-        alert("data.json 파일이 다운로드되었습니다. 깃허브에 이 파일을 올려주세요!");
+        render(centerStats, managerStats);
     }
 
-    function renderTables(cStats, mStats) {
+    function render(cStats, mStats) {
+        // 센터 테이블 채우기
         const cBody = document.querySelector('#centerTable tbody');
         cBody.innerHTML = '';
-        centers.forEach(c => {
-            if (cStats[c]) cBody.innerHTML += `<tr><td>${c}</td><td><b>${cStats[c]}</b></td></tr>`;
+        Object.keys(cStats).sort().forEach(c => {
+            cBody.innerHTML += `<tr><td class="center-name">${c}</td><td class="highlight">${cStats[c]}</td></tr>`;
         });
 
+        // 담당자 테이블 채우기
         const mBody = document.querySelector('#managerTable tbody');
         mBody.innerHTML = '';
         Object.keys(mStats).sort().forEach(m => {
-            mBody.innerHTML += `<tr><td>${m}</td><td>${mStats[m].center}</td><td><b>${mStats[m].count}</b></td></tr>`;
+            mBody.innerHTML += `<tr><td>${m}</td><td>${mStats[m].center}</td><td class="highlight">${mStats[m].count}</td></tr>`;
         });
+
+        // 화면 전환
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('content').style.display = 'grid';
+        document.getElementById('updateTime').innerText = "최종 업데이트: " + new Date().toLocaleString();
     }
 </script>
+
 </body>
 </html>
