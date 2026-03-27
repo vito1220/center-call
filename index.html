@@ -3,119 +3,150 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>실적 공유 시스템</title>
+    <title>마감 실적 통합 현황판</title>
     <style>
-        body { font-family: 'Malgun Gothic', sans-serif; background-color: #f4f7f6; padding: 20px; }
-        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        .admin-section { background: #fff3cd; padding: 20px; border-radius: 8px; margin-bottom: 30px; border: 1px solid #ffeeba; }
-        textarea { width: 100%; height: 100px; margin-bottom: 10px; border-radius: 5px; border: 1px solid #ccc; padding: 10px; }
-        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; }
+        body { font-family: 'Malgun Gothic', sans-serif; background-color: #f1f3f5; padding: 20px; color: #333; }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .admin-box { background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 25px; border: 1px solid #ffeeba; }
+        textarea { width: 100%; height: 100px; margin-bottom: 10px; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; }
+        .btn { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; }
         .btn-blue { background: #007bff; }
-        .btn-green { background: #28a745; }
-        .view-section { border-top: 2px solid #dee2e6; padding-top: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
-        th { background: #e9ecef; }
-        .update-time { font-size: 0.9em; color: #666; text-align: right; }
+        
+        /* 검색창 스타일 */
+        .search-box { margin-bottom: 20px; padding: 15px; background: #e8f0fe; border-radius: 8px; display: flex; gap: 10px; align-items: center; }
+        .search-input { flex: 1; padding: 12px; border: 1px solid #abc; border-radius: 5px; font-size: 15px; }
+        
+        .update-time { font-size: 0.85em; color: #666; text-align: right; margin-bottom: 10px; }
+        
+        .section-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
+        .box { background: #fff; border: 1px solid #dee2e6; padding: 15px; border-radius: 8px; }
+        h3 { font-size: 1.1em; border-left: 5px solid #007bff; padding-left: 10px; margin-bottom: 15px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #eee; padding: 10px; text-align: center; font-size: 13px; }
+        th { background: #f8f9fa; font-weight: bold; }
+        .num { font-weight: bold; color: #d9534f; }
+        .highlight { color: #0056b3; font-weight: bold; }
+        
+        @media (max-width: 768px) { .section-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>📈 센터별 마감 실적 현황판</h2>
+    <h2>📊 실시간 마감 실적 현황판</h2>
     <div id="lastUpdate" class="update-time">데이터 로딩 중...</div>
 
-    <details class="admin-section">
-        <summary style="cursor:pointer; font-weight:bold;">⚙️ 관리자 데이터 업데이트 (나만 사용)</summary>
+    <details class="admin-box">
+        <summary style="cursor:pointer; font-weight:bold;">⚙️ 데이터 업데이트 (나만 사용)</summary>
         <div style="margin-top:10px;">
-            <textarea id="rawInput" placeholder="엑셀 데이터를 붙여넣으세요..."></textarea>
-            <button class="btn btn-blue" onclick="processAndDownload()">1. 분석 및 데이터 파일 다운로드</button>
-            <p style="font-size:0.85em; color:#856404;">* 다운로드된 'data.json' 파일을 깃허브에 올리면 전체 공지됩니다.</p>
+            <textarea id="rawInput" placeholder="의정부_판매점_담당자_건수 형식으로 붙여넣으세요..."></textarea>
+            <button class="btn btn-blue" onclick="generateDataFile()">1. 분석 및 data.json 다운로드</button>
         </div>
     </details>
 
-    <div class="view-section">
-        <h3>🏢 센터별 합계</h3>
-        <table id="centerTable"><thead><tr><th>센터</th><th>콜건수</th></tr></thead><tbody></tbody></table>
-        
-        <h3>👥 담당자별 합계</h3>
-        <table id="managerTable"><thead><tr><th>담당자</th><th>센터</th><th>콜건수</th></tr></thead><tbody></tbody></table>
+    <div class="search-box">
+        🔍 <input type="text" id="searchInput" class="search-input" onkeyup="filterTable()" placeholder="판매점명 또는 담당자 이름을 입력하세요...">
+    </div>
+
+    <div class="section-grid">
+        <div class="box">
+            <h3>🏢 센터별 요약</h3>
+            <table id="centerTable">
+                <thead><tr><th>센터</th><th>총 건수</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="box">
+            <h3>🏪 상세 실적 현황</h3>
+            <table id="detailTable">
+                <thead><tr><th>센터</th><th>판매점명</th><th>담당자</th><th>건수</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
 </div>
 
 <script>
     const centers = ["고양", "의정부", "구리", "노원", "광진", "서대문", "춘천", "강릉", "원주"];
+    let currentData = { cStats: {}, details: [] };
 
-    // 1. 페이지 접속 시 깃허브에 있는 data.json을 자동으로 가져옴
+    // 페이지 로드 시 깃허브에서 데이터 가져오기
     window.onload = function() {
         fetch('data.json')
-            .then(response => response.json())
+            .then(res => res.json())
             .then(data => {
-                document.getElementById('lastUpdate').innerText = "최종 업데이트: " + data.updatedAt;
-                renderTables(data.centerStats, data.managerStats);
+                currentData = data;
+                document.getElementById('lastUpdate').innerText = "최종 업데이트: " + data.time;
+                render();
             })
-            .catch(err => {
-                document.getElementById('lastUpdate').innerText = "업데이트된 데이터 파일이 없습니다.";
+            .catch(() => {
+                document.getElementById('lastUpdate').innerText = "데이터 파일(data.json)을 찾을 수 없습니다.";
             });
     };
 
-    // 2. 관리자가 데이터를 분석하고 파일로 만드는 함수
-    function processAndDownload() {
+    // 관리자: 데이터 분석 및 파일 생성
+    function generateDataFile() {
         const text = document.getElementById('rawInput').value.trim();
         if(!text) return;
 
-        let centerStats = {};
-        let managerStats = {};
-        const lines = text.split('\n');
+        let cStats = {};
+        let details = [];
 
-        lines.forEach(line => {
-            const parts = line.trim().split(/\s+/);
-            if (parts.length < 2) return;
-            const count = parseInt(parts[parts.length - 1]) || 0;
-            const infoParts = parts.slice(0, parts.length - 1).join(" ").split('_');
-            if (infoParts.length < 3) return;
+        text.split('\n').forEach(line => {
+            const countMatch = line.trim().match(/(\d+)\s*$/);
+            if(!countMatch) return;
+            const count = parseInt(countMatch[1]);
+            const info = line.replace(/(\d+)\s*$/, "").split('_');
+            
+            if(info.length >= 3) {
+                const center = centers.find(c => info[0].includes(c)) || "기타";
+                const store = info[1].trim();
+                const manager = info[2].trim();
 
-            const center = infoParts[0].trim();
-            const manager = infoParts[2].trim();
-            const matchedCenter = centers.find(c => center.includes(c));
-
-            if (matchedCenter) {
-                centerStats[matchedCenter] = (centerStats[matchedCenter] || 0) + count;
-                if (!managerStats[manager]) managerStats[manager] = { center: matchedCenter, count: 0 };
-                managerStats[manager].count += count;
+                if(center !== "기타") {
+                    cStats[center] = (cStats[center] || 0) + count;
+                    details.push({ center, store, manager, count });
+                }
             }
         });
 
-        // 파일로 저장할 객체 생성
-        const finalData = {
-            updatedAt: new Date().toLocaleString(),
-            centerStats: centerStats,
-            managerStats: managerStats
-        };
-
-        // JSON 파일 다운로드 실행
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(finalData));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", "data.json");
-        document.body.appendChild(downloadAnchorNode);
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
-        
-        alert("data.json 파일이 다운로드되었습니다. 깃허브에 이 파일을 올려주세요!");
+        const finalData = { time: new Date().toLocaleString(), cStats, details };
+        const blob = new Blob([JSON.stringify(finalData)], {type: "application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = "data.json"; a.click();
+        alert("data.json 파일이 다운로드되었습니다. 이제 깃허브에 업로드해주세요!");
     }
 
-    function renderTables(cStats, mStats) {
-        const cBody = document.querySelector('#centerTable tbody');
-        cBody.innerHTML = '';
+    // 화면 그리기
+    function render() {
+        const cb = document.querySelector('#centerTable tbody');
+        const db = document.querySelector('#detailTable tbody');
+        cb.innerHTML = ''; db.innerHTML = '';
+
+        // 센터 요약표
         centers.forEach(c => {
-            if (cStats[c]) cBody.innerHTML += `<tr><td>${c}</td><td><b>${cStats[c]}</b></td></tr>`;
+            if (currentData.cStats[c]) {
+                cb.innerHTML += `<tr><td class="highlight">${c}</td><td class="num">${currentData.cStats[c]}</td></tr>`;
+            }
         });
 
-        const mBody = document.querySelector('#managerTable tbody');
-        mBody.innerHTML = '';
-        Object.keys(mStats).sort().forEach(m => {
-            mBody.innerHTML += `<tr><td>${m}</td><td>${mStats[m].center}</td><td><b>${mStats[m].count}</b></td></tr>`;
+        // 상세 내역표
+        currentData.details.forEach(item => {
+            db.innerHTML += `<tr><td>${item.center}</td><td>${item.store}</td><td>${item.manager}</td><td class="num">${item.count}</td></tr>`;
+        });
+    }
+
+    // 검색 필터 기능
+    function filterTable() {
+        const input = document.getElementById('searchInput').value.toLowerCase();
+        const rows = document.querySelectorAll('#detailTable tbody tr');
+
+        rows.forEach(row => {
+            const text = row.innerText.toLowerCase();
+            row.style.display = text.includes(input) ? "" : "none";
         });
     }
 </script>
