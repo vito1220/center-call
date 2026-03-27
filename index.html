@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>센터별 누적 인입콜 현황판</title>
+    <title>센터별 누적 인입 콜 현황</title>
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; background-color: #f1f3f5; padding: 20px; color: #333; }
         .container { max-width: 1100px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
@@ -11,30 +11,25 @@
         textarea { width: 100%; height: 100px; margin-bottom: 10px; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; }
         .btn { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; }
         .btn-blue { background: #007bff; }
-        
-        /* 검색창 스타일 */
         .search-box { margin-bottom: 20px; padding: 15px; background: #e8f0fe; border-radius: 8px; display: flex; gap: 10px; align-items: center; }
         .search-input { flex: 1; padding: 12px; border: 1px solid #abc; border-radius: 5px; font-size: 15px; }
-        
         .update-time { font-size: 0.85em; color: #666; text-align: right; margin-bottom: 10px; }
-        
         .section-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
         .box { background: #fff; border: 1px solid #dee2e6; padding: 15px; border-radius: 8px; }
         h3 { font-size: 1.1em; border-left: 5px solid #007bff; padding-left: 10px; margin-bottom: 15px; }
-        
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { border: 1px solid #eee; padding: 10px; text-align: center; font-size: 13px; }
         th { background: #f8f9fa; font-weight: bold; }
         .num { font-weight: bold; color: #d9534f; }
         .highlight { color: #0056b3; font-weight: bold; }
-        
+        .unregistered { color: #6c757d; font-style: italic; } /* 미등록용 스타일 */
         @media (max-width: 768px) { .section-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>📊 실시간 마감 실적 현황판</h2>
+    <h2>📊 센터별 누적 인입 콜 현황</h2>
     <div id="lastUpdate" class="update-time">데이터 로딩 중...</div>
 
     <details class="admin-box">
@@ -72,7 +67,6 @@
     const centers = ["고양", "의정부", "구리", "노원", "광진", "서대문", "춘천", "강릉", "원주"];
     let currentData = { cStats: {}, details: [] };
 
-    // 페이지 로드 시 깃허브에서 데이터 가져오기
     window.onload = function() {
         fetch('data.json')
             .then(res => res.json())
@@ -86,13 +80,15 @@
             });
     };
 
-    // 관리자: 데이터 분석 및 파일 생성
     function generateDataFile() {
         const text = document.getElementById('rawInput').value.trim();
         if(!text) return;
 
         let cStats = {};
         let details = [];
+        
+        // 9개 센터 외의 나머지를 담을 항목 초기화
+        cStats["미등록 판매점"] = 0;
 
         text.split('\n').forEach(line => {
             const countMatch = line.trim().match(/(\d+)\s*$/);
@@ -101,13 +97,17 @@
             const info = line.replace(/(\d+)\s*$/, "").split('_');
             
             if(info.length >= 3) {
-                const center = centers.find(c => info[0].includes(c)) || "기타";
+                const centerMatch = centers.find(c => info[0].includes(c));
                 const store = info[1].trim();
                 const manager = info[2].trim();
 
-                if(center !== "기타") {
-                    cStats[center] = (cStats[center] || 0) + count;
-                    details.push({ center, store, manager, count });
+                if(centerMatch) {
+                    cStats[centerMatch] = (cStats[centerMatch] || 0) + count;
+                    details.push({ center: centerMatch, store, manager, count });
+                } else {
+                    // 센터명이 매칭되지 않는 경우
+                    cStats["미등록 판매점"] += count;
+                    details.push({ center: "미등록", store, manager, count });
                 }
             }
         });
@@ -120,30 +120,31 @@
         alert("data.json 파일이 다운로드되었습니다. 이제 깃허브에 업로드해주세요!");
     }
 
-    // 화면 그리기
     function render() {
         const cb = document.querySelector('#centerTable tbody');
         const db = document.querySelector('#detailTable tbody');
         cb.innerHTML = ''; db.innerHTML = '';
 
-        // 센터 요약표
+        // 센터 요약 (등록된 9개 센터 먼저 출력)
         centers.forEach(c => {
             if (currentData.cStats[c]) {
                 cb.innerHTML += `<tr><td class="highlight">${c}</td><td class="num">${currentData.cStats[c]}</td></tr>`;
             }
         });
 
-        // 상세 내역표
+        // 미등록 판매점 합계 출력 (값이 있을 때만)
+        if (currentData.cStats["미등록 판매점"]) {
+            cb.innerHTML += `<tr class="unregistered"><td>미등록 판매점</td><td class="num">${currentData.cStats["미등록 판매점"]}</td></tr>`;
+        }
+
         currentData.details.forEach(item => {
             db.innerHTML += `<tr><td>${item.center}</td><td>${item.store}</td><td>${item.manager}</td><td class="num">${item.count}</td></tr>`;
         });
     }
 
-    // 검색 필터 기능
     function filterTable() {
         const input = document.getElementById('searchInput').value.toLowerCase();
         const rows = document.querySelectorAll('#detailTable tbody tr');
-
         rows.forEach(row => {
             const text = row.innerText.toLowerCase();
             row.style.display = text.includes(input) ? "" : "none";
