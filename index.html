@@ -22,7 +22,7 @@
         th { background: #f8f9fa; font-weight: bold; }
         .num { font-weight: bold; color: #d9534f; }
         .highlight { color: #0056b3; font-weight: bold; }
-        .unregistered { color: #6c757d; font-style: italic; } /* 미등록용 스타일 */
+        .total-row { background-color: #f8f9fa; font-weight: bold; }
         @media (max-width: 768px) { .section-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
@@ -35,7 +35,7 @@
     <details class="admin-box">
         <summary style="cursor:pointer; font-weight:bold;">⚙️ 데이터 업데이트 (나만 사용)</summary>
         <div style="margin-top:10px;">
-            <textarea id="rawInput" placeholder="의정부_판매점_담당자_건수 형식으로 붙여넣으세요..."></textarea>
+            <textarea id="rawInput" placeholder="엑셀 데이터를 복사해서 붙여넣으세요..."></textarea>
             <button class="btn btn-blue" onclick="generateDataFile()">1. 분석 및 data.json 다운로드</button>
         </div>
     </details>
@@ -50,6 +50,7 @@
             <table id="centerTable">
                 <thead><tr><th>센터</th><th>총 건수</th></tr></thead>
                 <tbody></tbody>
+                <tfoot><tr id="totalSumRow" class="total-row"><td>총 합계</td><td id="grandTotal" class="num">0</td></tr></tfoot>
             </table>
         </div>
 
@@ -65,7 +66,7 @@
 
 <script>
     const centers = ["고양", "의정부", "구리", "노원", "광진", "서대문", "춘천", "강릉", "원주"];
-    let currentData = { cStats: {}, details: [] };
+    let currentData = { cStats: {}, details: [], grandTotal: 0 };
 
     window.onload = function() {
         fetch('data.json')
@@ -86,38 +87,50 @@
 
         let cStats = {};
         let details = [];
+        let grandTotal = 0;
         
-        // 9개 센터 외의 나머지를 담을 항목 초기화
         cStats["미등록 판매점"] = 0;
 
         text.split('\n').forEach(line => {
-            const countMatch = line.trim().match(/(\d+)\s*$/);
+            const row = line.trim();
+            if(!row) return;
+
+            // 1. 마지막 숫자(건수) 추출
+            const countMatch = row.match(/(\d+)\s*$/);
             if(!countMatch) return;
             const count = parseInt(countMatch[1]);
-            const info = line.replace(/(\d+)\s*$/, "").split('_');
-            
-            if(info.length >= 3) {
-                const centerMatch = centers.find(c => info[0].includes(c));
-                const store = info[1].trim();
-                const manager = info[2].trim();
+            grandTotal += count;
+
+            // 2. 텍스트 부분 분석
+            const infoText = row.replace(/(\d+)\s*$/, "").trim();
+
+            if (infoText.includes("미등록 판매점")) {
+                // "미등록 판매점" 텍스트가 직접 포함된 경우
+                cStats["미등록 판매점"] += count;
+                details.push({ center: "미등록", store: "미등록 판매점", manager: "-", count });
+            } else {
+                // 일반적인 언더바 형식 분석
+                const infoParts = infoText.split('_');
+                const centerMatch = centers.find(c => infoText.includes(c));
+                const store = infoParts[1] ? infoParts[1].trim() : "정보없음";
+                const manager = infoParts[2] ? infoParts[2].trim() : "-";
 
                 if(centerMatch) {
                     cStats[centerMatch] = (cStats[centerMatch] || 0) + count;
                     details.push({ center: centerMatch, store, manager, count });
                 } else {
-                    // 센터명이 매칭되지 않는 경우
                     cStats["미등록 판매점"] += count;
-                    details.push({ center: "미등록", store, manager, count });
+                    details.push({ center: "미등록", store: infoText, manager: "-", count });
                 }
             }
         });
 
-        const finalData = { time: new Date().toLocaleString(), cStats, details };
+        const finalData = { time: new Date().toLocaleString(), cStats, details, grandTotal };
         const blob = new Blob([JSON.stringify(finalData)], {type: "application/json"});
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = "data.json"; a.click();
-        alert("data.json 파일이 다운로드되었습니다. 이제 깃허브에 업로드해주세요!");
+        alert("data.json 파일이 생성되었습니다. 깃허브에 업로드해주세요!");
     }
 
     function render() {
@@ -125,17 +138,17 @@
         const db = document.querySelector('#detailTable tbody');
         cb.innerHTML = ''; db.innerHTML = '';
 
-        // 센터 요약 (등록된 9개 센터 먼저 출력)
         centers.forEach(c => {
             if (currentData.cStats[c]) {
                 cb.innerHTML += `<tr><td class="highlight">${c}</td><td class="num">${currentData.cStats[c]}</td></tr>`;
             }
         });
 
-        // 미등록 판매점 합계 출력 (값이 있을 때만)
         if (currentData.cStats["미등록 판매점"]) {
-            cb.innerHTML += `<tr class="unregistered"><td>미등록 판매점</td><td class="num">${currentData.cStats["미등록 판매점"]}</td></tr>`;
+            cb.innerHTML += `<tr style="color:#666; font-style:italic;"><td>미등록 판매점</td><td class="num">${currentData.cStats["미등록 판매점"]}</td></tr>`;
         }
+
+        document.getElementById('grandTotal').innerText = (currentData.grandTotal || 0).toLocaleString();
 
         currentData.details.forEach(item => {
             db.innerHTML += `<tr><td>${item.center}</td><td>${item.store}</td><td>${item.manager}</td><td class="num">${item.count}</td></tr>`;
