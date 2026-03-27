@@ -8,9 +8,8 @@
         body { font-family: 'Malgun Gothic', sans-serif; background-color: #f1f3f5; padding: 20px; color: #333; }
         .container { max-width: 1100px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         .admin-box { background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 25px; border: 1px solid #ffeeba; }
-        textarea { width: 100%; height: 100px; margin-bottom: 10px; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; }
-        .btn { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; }
-        .btn-blue { background: #007bff; }
+        textarea { width: 100%; height: 150px; margin-bottom: 10px; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; font-size: 12px; }
+        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; background: #007bff; }
         .search-box { margin-bottom: 20px; padding: 15px; background: #e8f0fe; border-radius: 8px; display: flex; gap: 10px; align-items: center; }
         .search-input { flex: 1; padding: 12px; border: 1px solid #abc; border-radius: 5px; font-size: 15px; }
         .update-time { font-size: 0.85em; color: #666; text-align: right; margin-bottom: 10px; }
@@ -20,9 +19,10 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { border: 1px solid #eee; padding: 10px; text-align: center; font-size: 13px; }
         th { background: #f8f9fa; font-weight: bold; }
-        .num { font-weight: bold; color: #d9534f; }
+        .num { font-weight: bold; color: #d9534f; text-align: right; padding-right: 15px; }
         .highlight { color: #0056b3; font-weight: bold; }
-        .total-row { background-color: #f8f9fa; font-weight: bold; }
+        .total-row { background-color: #eee; font-weight: bold; border-top: 2px solid #333; }
+        .unreg-row { color: #777; background-color: #fafafa; }
         @media (max-width: 768px) { .section-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
@@ -33,24 +33,28 @@
     <div id="lastUpdate" class="update-time">데이터 로딩 중...</div>
 
     <details class="admin-box">
-        <summary style="cursor:pointer; font-weight:bold;">⚙️ 데이터 업데이트 (나만 사용)</summary>
+        <summary style="cursor:pointer; font-weight:bold;">⚙️ 데이터 업데이트 (관리자 전용)</summary>
         <div style="margin-top:10px;">
-            <textarea id="rawInput" placeholder="엑셀 데이터를 복사해서 붙여넣으세요..."></textarea>
-            <button class="btn btn-blue" onclick="generateDataFile()">1. 분석 및 data.json 다운로드</button>
+            <p style="font-size: 0.85em; color: #666;">* 엑셀에서 '센터명', '판매점명', '인입건수' 열을 포함하여 복사해 붙여넣으세요.</p>
+            <textarea id="rawInput" placeholder="여기에 복사한 데이터를 붙여넣으세요..."></textarea>
+            <button class="btn" onclick="generateDataFile()">데이터 분석 및 data.json 다운로드</button>
         </div>
     </details>
 
     <div class="search-box">
-        🔍 <input type="text" id="searchInput" class="search-input" onkeyup="filterTable()" placeholder="판매점명 또는 담당자 이름을 입력하세요...">
+        🔍 <input type="text" id="searchInput" class="search-input" onkeyup="filterTable()" placeholder="판매점명 또는 담당자 이름을 검색하세요...">
     </div>
 
     <div class="section-grid">
         <div class="box">
             <h3>🏢 센터별 요약</h3>
             <table id="centerTable">
-                <thead><tr><th>센터</th><th>총 건수</th></tr></thead>
+                <thead><tr><th>센터</th><th>인입건수</th></tr></thead>
                 <tbody></tbody>
-                <tfoot><tr id="totalSumRow" class="total-row"><td>총 합계</td><td id="grandTotal" class="num">0</td></tr></tfoot>
+                <tfoot>
+                    <tr class="unreg-row"><td>미등록 판매점</td><td id="unregTotal" class="num">0</td></tr>
+                    <tr class="total-row"><td>총 합계</td><td id="grandTotal" class="num">0</td></tr>
+                </tfoot>
             </table>
         </div>
 
@@ -65,8 +69,8 @@
 </div>
 
 <script>
-    const centers = ["고양", "의정부", "구리", "노원", "광진", "서대문", "춘천", "강릉", "원주"];
-    let currentData = { cStats: {}, details: [], grandTotal: 0 };
+    const targetCenters = ["고양", "의정부", "구리", "노원", "광진", "서대문", "춘천", "강릉", "원주"];
+    let currentData = { cStats: {}, details: [], grandTotal: 0, unregTotal: 0 };
 
     window.onload = function() {
         fetch('data.json')
@@ -77,7 +81,7 @@
                 render();
             })
             .catch(() => {
-                document.getElementById('lastUpdate').innerText = "데이터 파일(data.json)을 찾을 수 없습니다.";
+                document.getElementById('lastUpdate').innerText = "업데이트가 필요합니다 (data.json 없음)";
             });
     };
 
@@ -88,49 +92,59 @@
         let cStats = {};
         let details = [];
         let grandTotal = 0;
-        
-        cStats["미등록 판매점"] = 0;
+        let unregTotal = 0;
 
-        text.split('\n').forEach(line => {
-            const row = line.trim();
-            if(!row) return;
+        const lines = text.split('\n');
+        lines.forEach(line => {
+            if (!line.trim() || line.includes("센터명") || line.includes("인입건수")) return;
 
-            // 1. 마지막 숫자(건수) 추출
-            const countMatch = row.match(/(\d+)\s*$/);
-            if(!countMatch) return;
-            const count = parseInt(countMatch[1]);
+            // 탭이나 공백으로 분리
+            const parts = line.split(/\t|\s{2,}/);
+            
+            // 줄에서 숫자만 전부 찾아내기
+            const numbers = line.match(/\d+/g);
+            if (!numbers) return;
+            
+            // 가장 마지막에 있는 숫자를 건수로 인식
+            const count = parseInt(numbers[numbers.length - 1]);
             grandTotal += count;
 
-            // 2. 텍스트 부분 분석
-            const infoText = row.replace(/(\d+)\s*$/, "").trim();
-
-            if (infoText.includes("미등록 판매점")) {
-                // "미등록 판매점" 텍스트가 직접 포함된 경우
-                cStats["미등록 판매점"] += count;
-                details.push({ center: "미등록", store: "미등록 판매점", manager: "-", count });
+            const fullText = line.toLowerCase();
+            
+            if (fullText.includes("미등록")) {
+                unregTotal += count;
+                details.push({ center: "미등록", store: "미등록 판매점", manager: "-", count: count });
             } else {
-                // 일반적인 언더바 형식 분석
-                const infoParts = infoText.split('_');
-                const centerMatch = centers.find(c => infoText.includes(c));
-                const store = infoParts[1] ? infoParts[1].trim() : "정보없음";
-                const manager = infoParts[2] ? infoParts[2].trim() : "-";
+                const centerMatch = targetCenters.find(c => fullText.includes(c));
+                
+                // 상세 정보 추출 (언더바 형식 대응)
+                const infoParts = line.split('_');
+                const store = infoParts[1] ? infoParts[1].trim() : "기타";
+                const manager = infoParts[2] ? infoParts[2].replace(/\d+/g, '').replace(/\(|\)/g, '').trim() : "-";
 
-                if(centerMatch) {
+                if (centerMatch) {
                     cStats[centerMatch] = (cStats[centerMatch] || 0) + count;
-                    details.push({ center: centerMatch, store, manager, count });
+                    details.push({ center: centerMatch, store: store, manager: manager, count: count });
                 } else {
-                    cStats["미등록 판매점"] += count;
-                    details.push({ center: "미등록", store: infoText, manager: "-", count });
+                    unregTotal += count;
+                    details.push({ center: "기타", store: "미분류", manager: "-", count: count });
                 }
             }
         });
 
-        const finalData = { time: new Date().toLocaleString(), cStats, details, grandTotal };
+        const finalData = { 
+            time: new Date().toLocaleString(), 
+            cStats: cStats, 
+            details: details, 
+            grandTotal: grandTotal, 
+            unregTotal: unregTotal 
+        };
+
         const blob = new Blob([JSON.stringify(finalData)], {type: "application/json"});
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = "data.json"; a.click();
-        alert("data.json 파일이 생성되었습니다. 깃허브에 업로드해주세요!");
+        alert("성공! 'data.json' 파일을 깃허브에 업로드해주세요.");
     }
 
     function render() {
@@ -138,20 +152,17 @@
         const db = document.querySelector('#detailTable tbody');
         cb.innerHTML = ''; db.innerHTML = '';
 
-        centers.forEach(c => {
+        targetCenters.forEach(c => {
             if (currentData.cStats[c]) {
-                cb.innerHTML += `<tr><td class="highlight">${c}</td><td class="num">${currentData.cStats[c]}</td></tr>`;
+                cb.innerHTML += `<tr><td class="highlight">${c}</td><td class="num">${currentData.cStats[c].toLocaleString()}</td></tr>`;
             }
         });
 
-        if (currentData.cStats["미등록 판매점"]) {
-            cb.innerHTML += `<tr style="color:#666; font-style:italic;"><td>미등록 판매점</td><td class="num">${currentData.cStats["미등록 판매점"]}</td></tr>`;
-        }
-
+        document.getElementById('unregTotal').innerText = (currentData.unregTotal || 0).toLocaleString();
         document.getElementById('grandTotal').innerText = (currentData.grandTotal || 0).toLocaleString();
 
         currentData.details.forEach(item => {
-            db.innerHTML += `<tr><td>${item.center}</td><td>${item.store}</td><td>${item.manager}</td><td class="num">${item.count}</td></tr>`;
+            db.innerHTML += `<tr><td>${item.center}</td><td>${item.store}</td><td>${item.manager}</td><td class="num">${item.count.toLocaleString()}</td></tr>`;
         });
     }
 
@@ -159,8 +170,7 @@
         const input = document.getElementById('searchInput').value.toLowerCase();
         const rows = document.querySelectorAll('#detailTable tbody tr');
         rows.forEach(row => {
-            const text = row.innerText.toLowerCase();
-            row.style.display = text.includes(input) ? "" : "none";
+            row.style.display = row.innerText.toLowerCase().includes(input) ? "" : "none";
         });
     }
 </script>
