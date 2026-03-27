@@ -3,125 +3,100 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>실시간 마감 실적 현황판</title>
+    <title>실시간 마감 현황판 (자동분석형)</title>
     <style>
-        body { font-family: 'Malgun Gothic', sans-serif; background-color: #f4f7f9; padding: 20px; color: #333; }
-        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        body { font-family: 'Malgun Gothic', sans-serif; background-color: #f0f4f8; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         h2 { color: #0056b3; text-align: center; margin-bottom: 5px; }
-        .status-bar { text-align: right; font-size: 0.85em; color: #666; margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-        
-        .grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 25px; }
-        .box { background: #fff; border: 1px solid #e1e4e8; padding: 20px; border-radius: 10px; }
-        h3 { font-size: 1.1em; margin-top: 0; color: #444; border-left: 5px solid #0056b3; padding-left: 10px; }
-        
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #f0f0f0; padding: 12px; text-align: center; font-size: 14px; }
-        th { background-color: #f8f9fa; color: #555; font-weight: bold; }
-        tr:nth-child(even) { background-color: #fafafa; }
-        .highlight { font-weight: bold; color: #d9534f; }
-        .center-name { font-weight: bold; color: #0056b3; }
-
-        /* 로딩 애니메이션 */
-        #loading { text-align: center; padding: 50px; font-weight: bold; color: #0056b3; }
+        .status-bar { text-align: right; font-size: 0.85em; color: #777; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .box { background: #fff; border: 1px solid #e1e4e8; padding: 15px; border-radius: 10px; }
+        h3 { font-size: 1.1em; border-left: 5px solid #0056b3; padding-left: 10px; margin-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #f0f0f0; padding: 10px; text-align: center; font-size: 13px; }
+        th { background: #f8f9fa; }
+        .num { font-weight: bold; color: #d9534f; }
+        .center-tag { color: #0056b3; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h2>📊 마감 실적 실시간 현황판</h2>
-    <div id="updateTime" class="status-bar">데이터를 불러오는 중...</div>
+    <div id="updateTime" class="status-bar">데이터 동기화 중...</div>
 
-    <div id="loading">데이터를 읽어오고 있습니다. 잠시만 기다려주세요...</div>
-
-    <div id="content" class="grid" style="display:none;">
+    <div class="grid">
         <div class="box">
             <h3>🏢 센터별 합계</h3>
-            <table id="centerTable">
-                <thead><tr><th>센터명</th><th>총 콜건수</th></tr></thead>
-                <tbody></tbody>
-            </table>
+            <table id="centerTable"><thead><tr><th>센터</th><th>건수</th></tr></thead><tbody></tbody></table>
         </div>
-
         <div class="box">
-            <h3>👥 담당자별 실적</h3>
-            <table id="managerTable">
-                <thead><tr><th>담당자</th><th>센터</th><th>콜건수</th></tr></thead>
-                <tbody></tbody>
-            </table>
+            <h3>👥 담당자별 합계</h3>
+            <table id="managerTable"><thead><tr><th>담당자</th><th>센터</th><th>건수</th></tr></thead><tbody></tbody></table>
         </div>
     </div>
 </div>
 
 <script>
-    // 제공해주신 구글 시트 CSV 주소
     const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTooibgxnEq0T2BWeFQYDWmOUT7WEluZ08-OVVMxPvQ3lrbNnmI8URkXGmQSKC7ckOUbeBhEvjpa7Ld/pub?output=csv';
+    const targetCenters = ["고양", "의정부", "구리", "노원", "광진", "서대문", "춘천", "강릉", "원주"];
 
     window.onload = function() {
         fetch(SHEET_URL)
-            .then(response => response.text())
-            .then(csvText => {
-                processData(csvText);
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                document.getElementById('loading').innerText = "데이터를 불러오는 데 실패했습니다. 시트 설정을 확인해주세요.";
-            });
+            .then(res => res.text())
+            .then(csv => processCSV(csv));
     };
 
-    function processData(csvText) {
-        // CSV 줄 단위로 분리 (쉼표로 구분)
-        const rows = csvText.split('\n');
+    function processCSV(csv) {
+        const rows = csv.split('\n');
         let centerStats = {};
         let managerStats = {};
 
-        // 첫 번째 줄(헤더)을 제외하고 분석
-        for (let i = 1; i < rows.length; i++) {
-            if (!rows[i].trim()) continue;
-            
-            // CSV 파싱 (쉼표 기준 분리)
-            const cols = rows[i].split(',');
-            if (cols.length < 4) continue;
+        rows.forEach((row, index) => {
+            if (index === 0) return; // 헤더 제외
 
-            const center = cols[0].trim();   // A열: 센터명
-            const manager = cols[2].trim();  // C열: 담당자
-            const count = parseInt(cols[3].trim()) || 0; // D열: 건수
+            // 구글 시트에서 한 행을 가져오되, 콤마(,)로 구분된 데이터를 합쳐서 분석
+            // (사용자가 A열에만 데이터를 넣었을 경우를 대비)
+            const line = row.trim();
+            if (!line) return;
 
-            if (center && manager) {
-                // 센터별 합산
-                centerStats[center] = (centerStats[center] || 0) + count;
-                
-                // 담당자별 합산
-                if (!managerStats[manager]) {
-                    managerStats[manager] = { center: center, count: 0 };
-                }
+            // 1. 마지막 숫자(건수) 추출
+            const parts = line.split(',');
+            const count = parseInt(parts[parts.length - 1]) || 0;
+            const infoText = parts.slice(0, parts.length - 1).join(" ");
+
+            // 2. 언더바(_) 기준으로 텍스트 쪼개기
+            const infoParts = infoText.split('_');
+            if (infoParts.length < 3) return;
+
+            const rawCenter = infoParts[0]; // "춘천,원주" 혹은 "(중복)춘천" 등
+            const manager = infoParts[2].trim();
+
+            // 3. 센터 매칭 (9개 센터 중 포함된 단어가 있는지 확인)
+            const matchedCenter = targetCenters.find(c => rawCenter.includes(c)) || "기타";
+
+            if (matchedCenter !== "기타") {
+                centerStats[matchedCenter] = (centerStats[matchedCenter] || 0) + count;
+                if (!managerStats[manager]) managerStats[manager] = { center: matchedCenter, count: 0 };
                 managerStats[manager].count += count;
             }
-        }
+        });
 
         render(centerStats, managerStats);
     }
 
     function render(cStats, mStats) {
-        // 센터 테이블 채우기
         const cBody = document.querySelector('#centerTable tbody');
-        cBody.innerHTML = '';
         Object.keys(cStats).sort().forEach(c => {
-            cBody.innerHTML += `<tr><td class="center-name">${c}</td><td class="highlight">${cStats[c]}</td></tr>`;
+            cBody.innerHTML += `<tr><td class="center-tag">${c}</td><td class="num">${cStats[c]}</td></tr>`;
         });
 
-        // 담당자 테이블 채우기
         const mBody = document.querySelector('#managerTable tbody');
-        mBody.innerHTML = '';
         Object.keys(mStats).sort().forEach(m => {
-            mBody.innerHTML += `<tr><td>${m}</td><td>${mStats[m].center}</td><td class="highlight">${mStats[m].count}</td></tr>`;
+            mBody.innerHTML += `<tr><td>${m}</td><td>${mStats[m].center}</td><td class="num">${mStats[m].count}</td></tr>`;
         });
-
-        // 화면 전환
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('content').style.display = 'grid';
         document.getElementById('updateTime').innerText = "최종 업데이트: " + new Date().toLocaleString();
     }
 </script>
-
 </body>
 </html>
