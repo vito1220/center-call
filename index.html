@@ -3,20 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>실시간 마감 현황판 (자동분석형)</title>
+    <title>실시간 실적 현황판 (강력추출형)</title>
     <style>
-        body { font-family: 'Malgun Gothic', sans-serif; background-color: #f0f4f8; padding: 20px; }
-        .container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        h2 { color: #0056b3; text-align: center; margin-bottom: 5px; }
-        .status-bar { text-align: right; font-size: 0.85em; color: #777; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        body { font-family: 'Malgun Gothic', sans-serif; background-color: #f0f2f5; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { color: #1a73e8; text-align: center; margin-bottom: 5px; }
+        .status-bar { text-align: right; font-size: 0.85em; color: #888; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .box { background: #fff; border: 1px solid #e1e4e8; padding: 15px; border-radius: 10px; }
-        h3 { font-size: 1.1em; border-left: 5px solid #0056b3; padding-left: 10px; margin-bottom: 15px; }
+        .box { background: #fff; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; }
+        h3 { font-size: 1.1em; border-left: 5px solid #1a73e8; padding-left: 10px; margin-bottom: 15px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { border: 1px solid #f0f0f0; padding: 10px; text-align: center; font-size: 13px; }
-        th { background: #f8f9fa; }
-        .num { font-weight: bold; color: #d9534f; }
-        .center-tag { color: #0056b3; font-weight: bold; }
+        th { background: #f8f9fa; font-weight: bold; }
+        .num { font-weight: bold; color: #d93025; }
+        .center-tag { color: #1a73e8; font-weight: bold; }
+        #loading { text-align: center; padding: 30px; font-weight: bold; color: #1a73e8; }
     </style>
 </head>
 <body>
@@ -24,8 +25,9 @@
 <div class="container">
     <h2>📊 마감 실적 실시간 현황판</h2>
     <div id="updateTime" class="status-bar">데이터 동기화 중...</div>
+    <div id="loading">데이터를 읽어오는 중입니다...</div>
 
-    <div class="grid">
+    <div id="content" class="grid" style="display:none;">
         <div class="box">
             <h3>🏢 센터별 합계</h3>
             <table id="centerTable"><thead><tr><th>센터</th><th>건수</th></tr></thead><tbody></tbody></table>
@@ -44,7 +46,16 @@
     window.onload = function() {
         fetch(SHEET_URL)
             .then(res => res.text())
-            .then(csv => processCSV(csv));
+            .then(csv => {
+                if(csv.includes("<!DOCTYPE html>")) {
+                    document.getElementById('loading').innerText = "구글 시트 주소가 잘못되었습니다. '웹에 게시' 링크인지 확인해주세요.";
+                    return;
+                }
+                processCSV(csv);
+            })
+            .catch(err => {
+                document.getElementById('loading').innerText = "연결 오류가 발생했습니다.";
+            });
     };
 
     function processCSV(csv) {
@@ -53,29 +64,27 @@
         let managerStats = {};
 
         rows.forEach((row, index) => {
-            if (index === 0) return; // 헤더 제외
+            if (index === 0 || !row.trim()) return; 
 
-            // 구글 시트에서 한 행을 가져오되, 콤마(,)로 구분된 데이터를 합쳐서 분석
-            // (사용자가 A열에만 데이터를 넣었을 경우를 대비)
+            // 1. 전체 줄에서 숫자만 찾아내기 (문장 맨 뒤에 있는 숫자 추출)
             const line = row.trim();
-            if (!line) return;
+            const matchCount = line.match(/(\d+)\s*$/); // 줄 끝에 붙은 숫자 찾기
+            const count = matchCount ? parseInt(matchCount[1]) : 0;
+            
+            // 2. 텍스트 부분만 추출
+            const infoText = line.replace(/(\d+)\s*$/, "").trim();
 
-            // 1. 마지막 숫자(건수) 추출
-            const parts = line.split(',');
-            const count = parseInt(parts[parts.length - 1]) || 0;
-            const infoText = parts.slice(0, parts.length - 1).join(" ");
-
-            // 2. 언더바(_) 기준으로 텍스트 쪼개기
+            // 3. 언더바(_)로 쪼개기
             const infoParts = infoText.split('_');
-            if (infoParts.length < 3) return;
+            
+            // 정보가 부족해도(언더바가 3개 미만이어도) 일단 센터라도 찾음
+            const rawText = infoParts[0] || ""; 
+            const manager = infoParts[2] ? infoParts[2].trim() : "미확인";
 
-            const rawCenter = infoParts[0]; // "춘천,원주" 혹은 "(중복)춘천" 등
-            const manager = infoParts[2].trim();
+            // 4. 센터 매칭
+            const matchedCenter = targetCenters.find(c => rawText.includes(c));
 
-            // 3. 센터 매칭 (9개 센터 중 포함된 단어가 있는지 확인)
-            const matchedCenter = targetCenters.find(c => rawCenter.includes(c)) || "기타";
-
-            if (matchedCenter !== "기타") {
+            if (matchedCenter && count > 0) {
                 centerStats[matchedCenter] = (centerStats[matchedCenter] || 0) + count;
                 if (!managerStats[manager]) managerStats[manager] = { center: matchedCenter, count: 0 };
                 managerStats[manager].count += count;
@@ -87,14 +96,19 @@
 
     function render(cStats, mStats) {
         const cBody = document.querySelector('#centerTable tbody');
+        const mBody = document.querySelector('#managerTable tbody');
+        cBody.innerHTML = ''; mBody.innerHTML = '';
+
         Object.keys(cStats).sort().forEach(c => {
             cBody.innerHTML += `<tr><td class="center-tag">${c}</td><td class="num">${cStats[c]}</td></tr>`;
         });
 
-        const mBody = document.querySelector('#managerTable tbody');
         Object.keys(mStats).sort().forEach(m => {
             mBody.innerHTML += `<tr><td>${m}</td><td>${mStats[m].center}</td><td class="num">${mStats[m].count}</td></tr>`;
         });
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('content').style.display = 'grid';
         document.getElementById('updateTime').innerText = "최종 업데이트: " + new Date().toLocaleString();
     }
 </script>
